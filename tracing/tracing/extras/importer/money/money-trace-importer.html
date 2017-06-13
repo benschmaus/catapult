@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<!--
+Copyright (c) 2015 The Chromium Authors. All rights reserved.
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
+
+<link rel="import" href="/tracing/importer/importer.html">
+
+<script>
+
+'use strict';
+
+/**
+ * @fileoverview MoneyTraceImporter imports JSON data from Money Trace.
+ */
+tr.exportTo('tr.e.importer.money_trace', function() {
+  function MoneyTraceImporter(model, eventData) {
+    this.importPriority = 2;
+    this.eventData_ = this.rawLogsToEventData(eventData);
+    console.log(this.eventData_);
+  }
+
+  /**
+   * @return {boolean} Whether obj looks like the JSON output from Money Trace.
+   */
+  MoneyTraceImporter.canImport = function(eventData) {
+    console.log(typeof(eventData));
+    if (typeof(eventData) !== 'string' && !(eventData instanceof String)) {
+      return false;
+    }
+
+    console.log("eventData (money) is: " + eventData);
+
+    return eventData.includes("span-id");
+  };
+
+  MoneyTraceImporter.prototype = {
+
+    __proto__: tr.importer.Importer.prototype,
+
+    rawLogsToEventData(rawData) {
+      // for testing
+      var moneyLog = `2017-06-13 13:00:35,087 INFO  PATAPL-31HLG8WM finagle/netty3-2 p=trace Span: [ span-id=-1140834400654877780 ][ trace-id=fac88032-3767-4b40-95f0-e65e4707920a ][ parent-id=-5208428698326874227 ][ span-name=elasticsearch-query ][ app-name=Lumberjawn ][ start-time=1497373234977 ][ span-duration=109594 ][ span-success=true ] [ host=10.36.96.54 ][ status=200 ][ hits=6 ]
+      2017-06-13 13:00:35,136 INFO  PATAPL-31HLG8WM finagle/netty3-3 p=trace Span: [ span-id=7891216090842256765 ][ trace-id=fac88032-3767-4b40-95f0-e65e4707920a ][ parent-id=-5208428698326874227 ][ span-name=elasticsearch-query ][ app-name=Lumberjawn ][ start-time=1497373234979 ][ span-duration=156647 ][ span-success=true ] [ host=10.36.96.54 ][ status=200 ][ hits=8 ]
+      2017-06-13 13:00:35,949 INFO  PATAPL-31HLG8WM finagle/netty3-3 p=trace Span: [ span-id=-7232300028125773993 ][ trace-id=fac88032-3767-4b40-95f0-e65e4707920a ][ parent-id=-5208428698326874227 ][ span-name=elasticsearch-query ][ app-name=Lumberjawn ][ start-time=1497373235141 ][ span-duration=807965 ][ span-success=true ] [ host=10.36.96.54 ][ status=200 ][ hits=0 ]
+      2017-06-13 13:00:36,045 INFO  PATAPL-31HLG8WM finagle/netty3-2 p=trace Span: [ span-id=7207935604582865672 ][ trace-id=fac88032-3767-4b40-95f0-e65e4707920a ][ parent-id=-5208428698326874227 ][ span-name=elasticsearch-query ][ app-name=Lumberjawn ][ start-time=1497373235951 ][ span-duration=93816 ][ span-success=true ] [ host=10.36.96.54 ][ status=200 ][ hits=0 ]
+      2017-06-13 13:00:36,090 INFO  PATAPL-31HLG8WM finagle/netty3-2 p=trace Span: [ span-id=4346016766305592933 ][ trace-id=fac88032-3767-4b40-95f0-e65e4707920a ][ parent-id=-5208428698326874227 ][ span-name=elasticsearch-fetch ][ app-name=Lumberjawn ][ start-time=1497373236047 ][ span-duration=43068 ][ span-success=true ] [ host=10.36.96.54 ][ status-code=200 ][ hits=6 ]
+      2017-06-13 13:00:36,263 INFO  PATAPL-31HLG8WM finagle/netty3-3 p=trace Span: [ span-id=-442554049102433245 ][ trace-id=fac88032-3767-4b40-95f0-e65e4707920a ][ parent-id=-5208428698326874227 ][ span-name=elasticsearch-fetch ][ app-name=Lumberjawn ][ start-time=1497373236047 ][ span-duration=215301 ][ span-success=true ] [ host=10.36.96.54 ][ status-code=200 ][ hits=8 ]
+      2017-06-13 13:00:36,267 INFO  PATAPL-31HLG8WM ForkJoinPool-1-worker-7 p=trace Span: [ span-id=-5208428698326874227 ][ trace-id=fac88032-3767-4b40-95f0-e65e4707920a ][ parent-id=-5208428698326874227 ][ span-name=LJRequest ][ app-name=Lumberjawn ][ start-time=1497373234974 ][ span-duration=1292457 ][ span-success=true ] [ host=10.36.96.54 ][ status-code=200 ][ request-path=/lj-2/_search ][ request-method=GET ]`;
+
+      //console.log(moneyLog);
+
+      var split = moneyLog.split("\n");
+      //console.log(split.length);
+
+      var parsed = split.map((line) => {
+        // 1. get rid of everything up to the first "[" char
+        // 2. get rid of the "[" and "]" chars around the key val pairs
+        var trimmed = line.substr(line.indexOf("[")).replace(/(\[\s|\s\])/g," ");
+        
+        var event = {};
+        
+        trimmed.split(" ").forEach((field) => {
+          if (field !== "") {
+            var keyVal = field.split("=");
+            event[keyVal[0].trim()] = keyVal[1].trim();
+          }
+        });
+
+        return event;
+      });
+
+      return parsed;
+    },
+
+    get importerName() {
+      return 'MoneyTraceImporter';
+    },
+
+    /**
+     * Called by the Model to extract subtraces from the event data. The
+     * subtraces are passed on to other importers that can recognize them.
+     */
+    extractSubtraces() {
+      var traceEvents = this.createEventsForTrace();
+      return traceEvents ? [traceEvents] : [];
+    },
+
+    createEventsForTrace() {
+      var events = [];
+      
+      var trace = JSON.parse(this.eventData_);
+      
+      var spanLength = trace.spans.length;
+      for (var i = 0; i < spanLength; i++) {
+        events.push(this.createEventForSpan(trace.traceId, trace.spans[i]));
+      }
+      return {
+        'traceEvents': events
+      };
+    
+    },
+
+    createEventForSpan(traceId, span) {
+      var newArgs = {};
+      if (span.labels) {
+        newArgs = JSON.parse(JSON.stringify(span.labels));
+      }
+      newArgs['Span ID'] = span.spanId;
+      newArgs['Start Time'] = span.startTime;
+      newArgs['End Time'] = span.endTime;
+      if (span.parentSpanId) {
+        newArgs['Parent Span ID'] = span.parentSpanId;
+      }
+      // The timestamps are ISO-standard strings, which are parsed to millis,
+      // then converted to the micros that the trace viewer expects.
+      return {
+        name: span.name,
+        args: newArgs,
+        pid: traceId,
+        ts: Date.parse(span.startTime) * 1000,
+        dur: (Date.parse(span.endTime) - Date.parse(span.startTime)) * 1000,
+        cat: 'tracespan',
+        tid: traceId,
+        ph: 'X'
+      };
+    }
+  };
+
+  tr.importer.Importer.register(MoneyTraceImporter);
+
+  return {
+    MoneyTraceImporter,
+  };
+});
+</script>
