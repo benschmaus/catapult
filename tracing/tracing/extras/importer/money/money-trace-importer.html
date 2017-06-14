@@ -19,7 +19,7 @@ tr.exportTo('tr.e.importer.money_trace', function() {
     this.importPriority = 2;
     this.eventData_ = this.rawLogsToEventData(eventData);
     
-    //console.log(this.eventData_);
+    console.log(this.eventData_);
   }
 
   /**
@@ -68,8 +68,11 @@ tr.exportTo('tr.e.importer.money_trace', function() {
             var keyVal = field.split("=");
             //console.log(keyVal);
             if (keyVal.length > 1) {
-              lastField = keyVal[0].trim();
-              event[lastField] = keyVal[1].trim();
+              lastField = keyVal.shift().trim();
+              event[lastField] = "";
+              keyVal.forEach((value) => {
+                event[lastField] += value.trim();
+              })
             } else {
               event[lastField] += " " + keyVal[0];
             }
