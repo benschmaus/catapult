@@ -18,19 +18,18 @@ tr.exportTo('tr.e.importer.money_trace', function() {
   function MoneyTraceImporter(model, eventData) {
     this.importPriority = 2;
     this.eventData_ = this.rawLogsToEventData(eventData);
-    console.log(this.eventData_);
+    
+    //console.log(this.eventData_);
   }
 
   /**
    * @return {boolean} Whether obj looks like the JSON output from Money Trace.
    */
   MoneyTraceImporter.canImport = function(eventData) {
-    console.log(typeof(eventData));
     if (typeof(eventData) !== 'string' && !(eventData instanceof String)) {
       return false;
     }
-
-    console.log("eventData (money) is: " + eventData);
+    //console.log("eventData (money) is: " + eventData);
 
     return eventData.includes("span-id");
   };
@@ -49,25 +48,35 @@ tr.exportTo('tr.e.importer.money_trace', function() {
       2017-06-13 13:00:36,263 INFO  PATAPL-31HLG8WM finagle/netty3-3 p=trace Span: [ span-id=-442554049102433245 ][ trace-id=fac88032-3767-4b40-95f0-e65e4707920a ][ parent-id=-5208428698326874227 ][ span-name=elasticsearch-fetch ][ app-name=Lumberjawn ][ start-time=1497373236047 ][ span-duration=215301 ][ span-success=true ] [ host=10.36.96.54 ][ status-code=200 ][ hits=8 ]
       2017-06-13 13:00:36,267 INFO  PATAPL-31HLG8WM ForkJoinPool-1-worker-7 p=trace Span: [ span-id=-5208428698326874227 ][ trace-id=fac88032-3767-4b40-95f0-e65e4707920a ][ parent-id=-5208428698326874227 ][ span-name=LJRequest ][ app-name=Lumberjawn ][ start-time=1497373234974 ][ span-duration=1292457 ][ span-success=true ] [ host=10.36.96.54 ][ status-code=200 ][ request-path=/lj-2/_search ][ request-method=GET ]`;
 
-      //console.log(moneyLog);
+      //console.log("rawData: " + rawData);
 
-      var split = moneyLog.split("\n");
+      var split = rawData.trim().split("\n");
       //console.log(split.length);
 
       var parsed = split.map((line) => {
         // 1. get rid of everything up to the first "[" char
         // 2. get rid of the "[" and "]" chars around the key val pairs
-        var trimmed = line.substr(line.indexOf("[")).replace(/(\[\s|\s\])/g," ");
-        
+        var trimmed = line.substr(line.indexOf("[")).replace(/(\[\s|\s\])/g, " ");
+        //console.log(trimmed);
+
         var event = {};
-        
+        var lastField = null;
+
         trimmed.split(" ").forEach((field) => {
+          //console.log(field);
           if (field !== "") {
             var keyVal = field.split("=");
-            event[keyVal[0].trim()] = keyVal[1].trim();
+            //console.log(keyVal);
+            if (keyVal.length > 1) {
+              lastField = keyVal[0].trim();
+              event[lastField] = keyVal[1].trim();
+            } else {
+              event[lastField] += " " + keyVal[0];
+            }
+
           }
         });
-
+        //console.log(event);
         return event;
       });
 
@@ -90,32 +99,31 @@ tr.exportTo('tr.e.importer.money_trace', function() {
     createEventsForTrace() {
       var events = [];
       
-      var trace = JSON.parse(this.eventData_);
+      var trace = this.eventData_;
       
-      var spanLength = trace.spans.length;
-      for (var i = 0; i < spanLength; i++) {
-        events.push(this.createEventForSpan(trace.traceId, trace.spans[i]));
+      for (var i = 0; i < trace.length; i++) {
+        events.push(this.createEventForSpan(trace[i]));
       }
-      return {
+
+      //console.log(events);
+
+      var r = {
         'traceEvents': events
       };
+      //console.log(r);
+      return r;
     
     },
 
-    createEventForSpan(traceId, span) {
+    createEventForSpan(span) {
       var newArgs = {};
-      if (span.labels) {
-        newArgs = JSON.parse(JSON.stringify(span.labels));
+
+      var requiredFields = ["span-name","trace-id","start-time","span-duration"];
+      for (var field in span) {
+        newArgs[field] = span[field];
       }
-      newArgs['Span ID'] = span.spanId;
-      newArgs['Start Time'] = span.startTime;
-      newArgs['End Time'] = span.endTime;
-      if (span.parentSpanId) {
-        newArgs['Parent Span ID'] = span.parentSpanId;
-      }
-      // The timestamps are ISO-standard strings, which are parsed to millis,
-      // then converted to the micros that the trace viewer expects.
-      return {
+
+/*
         name: span.name,
         args: newArgs,
         pid: traceId,
@@ -123,6 +131,19 @@ tr.exportTo('tr.e.importer.money_trace', function() {
         dur: (Date.parse(span.endTime) - Date.parse(span.startTime)) * 1000,
         cat: 'tracespan',
         tid: traceId,
+        ph: 'X'
+*/
+
+      return {
+        name: span["span-name"],
+        args: newArgs,
+        pid: span["trace-id"],
+        //ts: span["start-time"] * 1000,
+        ts: new Date(new Number(span["start-time"])) * 1000,
+        dur: span["span-duration"],
+        cat: 'moneytrace',
+        tid: (span["span-id"] == span['parent-id']) ? span['trace-id'] : span['span-id'],
+        //tid: span['trace-id'],
         ph: 'X'
       };
     }
