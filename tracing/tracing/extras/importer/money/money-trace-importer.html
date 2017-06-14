@@ -113,7 +113,7 @@ tr.exportTo('tr.e.importer.money_trace', function() {
       var r = {
         'traceEvents': events
       };
-      //console.log(r);
+      console.log(r);
       return r;
     
     },
@@ -140,13 +140,11 @@ tr.exportTo('tr.e.importer.money_trace', function() {
       return {
         name: span["span-name"],
         args: newArgs,
-        pid: span["trace-id"],
-        //ts: span["start-time"] * 1000,
-        ts: new Date(new Number(span["start-time"])) * 1000,
+        pid: (span["span-id"] == span['parent-id']) ? span['trace-id'] : span['parent-id'],
+        ts: span["start-time"] * 1000,
         dur: span["span-duration"],
         cat: 'moneytrace',
-        tid: (span["span-id"] == span['parent-id']) ? span['trace-id'] : span['span-id'],
-        //tid: span['trace-id'],
+        tid: span['span-id'],
         ph: 'X'
       };
     }
