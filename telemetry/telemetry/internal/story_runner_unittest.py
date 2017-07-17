@@ -39,6 +39,7 @@ from telemetry.web_perf import story_test
 from telemetry.web_perf import timeline_based_measurement
 from telemetry.wpr import archive_info
 from tracing.value import histogram as histogram_module
+from tracing.value import histogram_set
 
 
 # This linter complains if we define classes nested inside functions.
@@ -49,9 +50,6 @@ from tracing.value import histogram as histogram_module
 class FakePlatform(object):
   def CanMonitorThermalThrottling(self):
     return False
-
-  def GetOSName(self):
-    pass
 
   def WaitForBatteryTemperature(self, _):
     pass
@@ -363,11 +361,13 @@ class StoryRunnerTest(unittest.TestCase):
                       self.options, self.results)
 
   def testRunStoryWithLongURLPage(self):
-    story_set = story_module.StorySet(verify_names=False)
-    story_set.AddStory(page_module.Page('file://long' + 'g' * 180, story_set))
+    story_set = story_module.StorySet()
+    story_set.AddStory(page_module.Page('file://long' + 'g' * 180,
+                                        story_set, name='test'))
     test = DummyTest()
-    self.assertRaises(ValueError, story_runner.Run, test, story_set,
-                      self.options, self.results)
+    story_runner.Run(test, story_set,
+                      self.options, self.results,
+                      metadata=EmptyMetadataForTest())
 
   def testSuccessfulTimelineBasedMeasurementTest(self):
     """Check that PageTest is not required for story_runner.Run.
@@ -1063,7 +1063,6 @@ class StoryRunnerTest(unittest.TestCase):
         root_mock.story, root_mock.results, root_mock.state, root_mock.test)
 
     self.assertEquals(root_mock.method_calls, [
-      mock.call.state.platform.GetOSName(),
       mock.call.test.WillRunStory(root_mock.state.platform),
       mock.call.state.WillRunStory(root_mock.story),
       mock.call.state.CanRunStory(root_mock.story),
@@ -1071,7 +1070,6 @@ class StoryRunnerTest(unittest.TestCase):
       mock.call.test.Measure(root_mock.state.platform, root_mock.results),
       mock.call.test.DidRunStory(root_mock.state.platform, root_mock.results),
       mock.call.state.DidRunStory(root_mock.results),
-      mock.call.state.platform.GetOSName(),
     ])
 
   def testRunStoryAndProcessErrorIfNeeded_successLegacy(self):
@@ -1081,13 +1079,11 @@ class StoryRunnerTest(unittest.TestCase):
         root_mock.story, root_mock.results, root_mock.state, root_mock.test)
 
     self.assertEquals(root_mock.method_calls, [
-      mock.call.state.platform.GetOSName(),
       mock.call.state.WillRunStory(root_mock.story),
       mock.call.state.CanRunStory(root_mock.story),
       mock.call.state.RunStory(root_mock.results),
       mock.call.test.DidRunPage(root_mock.state.platform),
       mock.call.state.DidRunStory(root_mock.results),
-      mock.call.state.platform.GetOSName(),
     ])
 
   def testRunStoryAndProcessErrorIfNeeded_tryTimeout(self):
@@ -1099,14 +1095,12 @@ class StoryRunnerTest(unittest.TestCase):
         root_mock.story, root_mock.results, root_mock.state, root_mock.test)
 
     self.assertEquals(root_mock.method_calls, [
-      mock.call.state.platform.GetOSName(),
       mock.call.test.WillRunStory(root_mock.state.platform),
       mock.call.state.WillRunStory(root_mock.story),
       mock.call.state.DumpStateUponFailure(root_mock.story, root_mock.results),
       mock.call.results.AddValue(FailureValueMatcher('foo')),
       mock.call.test.DidRunStory(root_mock.state.platform, root_mock.results),
       mock.call.state.DidRunStory(root_mock.results),
-      mock.call.state.platform.GetOSName(),
     ])
 
   def testRunStoryAndProcessErrorIfNeeded_tryError(self):
@@ -1119,7 +1113,6 @@ class StoryRunnerTest(unittest.TestCase):
           root_mock.story, root_mock.results, root_mock.state, root_mock.test)
 
     self.assertEquals(root_mock.method_calls, [
-      mock.call.state.platform.GetOSName(),
       mock.call.test.WillRunStory(root_mock.state.platform),
       mock.call.state.WillRunStory(root_mock.story),
       mock.call.state.CanRunStory(root_mock.story),
@@ -1127,7 +1120,6 @@ class StoryRunnerTest(unittest.TestCase):
       mock.call.results.AddValue(FailureValueMatcher('foo')),
       mock.call.test.DidRunStory(root_mock.state.platform, root_mock.results),
       mock.call.state.DidRunStory(root_mock.results),
-      mock.call.state.platform.GetOSName(),
     ])
 
   def testRunStoryAndProcessErrorIfNeeded_tryUnsupportedAction(self):
@@ -1139,7 +1131,6 @@ class StoryRunnerTest(unittest.TestCase):
         root_mock.story, root_mock.results, root_mock.state, root_mock.test)
 
     self.assertEquals(root_mock.method_calls, [
-      mock.call.state.platform.GetOSName(),
       mock.call.test.WillRunStory(root_mock.state.platform),
       mock.call.state.WillRunStory(root_mock.story),
       mock.call.state.CanRunStory(root_mock.story),
@@ -1147,7 +1138,6 @@ class StoryRunnerTest(unittest.TestCase):
       mock.call.results.AddValue(SkipValueMatcher()),
       mock.call.test.DidRunStory(root_mock.state.platform, root_mock.results),
       mock.call.state.DidRunStory(root_mock.results),
-      mock.call.state.platform.GetOSName(),
     ])
 
   def testRunStoryAndProcessErrorIfNeeded_tryUnhandlable(self):
@@ -1160,13 +1150,11 @@ class StoryRunnerTest(unittest.TestCase):
           root_mock.story, root_mock.results, root_mock.state, root_mock.test)
 
     self.assertEquals(root_mock.method_calls, [
-      mock.call.state.platform.GetOSName(),
       mock.call.test.WillRunStory(root_mock.state.platform),
       mock.call.state.DumpStateUponFailure(root_mock.story, root_mock.results),
       mock.call.results.AddValue(FailureValueMatcher('foo')),
       mock.call.test.DidRunStory(root_mock.state.platform, root_mock.results),
       mock.call.state.DidRunStory(root_mock.results),
-      mock.call.state.platform.GetOSName(),
     ])
 
   def testRunStoryAndProcessErrorIfNeeded_finallyException(self):
@@ -1179,7 +1167,6 @@ class StoryRunnerTest(unittest.TestCase):
           root_mock.story, root_mock.results, root_mock.state, root_mock.test)
 
     self.assertEquals(root_mock.method_calls, [
-      mock.call.state.platform.GetOSName(),
       mock.call.test.WillRunStory(root_mock.state.platform),
       mock.call.state.WillRunStory(root_mock.story),
       mock.call.state.CanRunStory(root_mock.story),
@@ -1200,7 +1187,6 @@ class StoryRunnerTest(unittest.TestCase):
         root_mock.story, root_mock.results, root_mock.state, root_mock.test)
 
     self.assertEquals(root_mock.method_calls, [
-      mock.call.state.platform.GetOSName(),
       mock.call.test.WillRunStory(root_mock.state.platform),
       mock.call.state.WillRunStory(root_mock.story),
       mock.call.state.CanRunStory(root_mock.story),
@@ -1222,7 +1208,6 @@ class StoryRunnerTest(unittest.TestCase):
           root_mock.story, root_mock.results, root_mock.state, root_mock.test)
 
     self.assertEquals(root_mock.method_calls, [
-      mock.call.state.platform.GetOSName(),
       mock.call.test.WillRunStory(root_mock.state.platform),
       mock.call.state.WillRunStory(root_mock.story),
       mock.call.state.DumpStateUponFailure(root_mock.story, root_mock.results),
@@ -1241,7 +1226,6 @@ class StoryRunnerTest(unittest.TestCase):
         root_mock.story, root_mock.results, root_mock.state, root_mock.test)
 
     self.assertEquals(root_mock.method_calls, [
-      mock.call.state.platform.GetOSName(),
       mock.call.test.WillRunStory(root_mock.state.platform),
       mock.call.results.AddValue(SkipValueMatcher()),
       mock.call.test.DidRunStory(root_mock.state.platform, root_mock.results),
@@ -1259,7 +1243,6 @@ class StoryRunnerTest(unittest.TestCase):
           root_mock.story, root_mock.results, root_mock.state, root_mock.test)
 
     self.assertEquals(root_mock.method_calls, [
-      mock.call.state.platform.GetOSName(),
       mock.call.test.WillRunStory(root_mock.state.platform),
       mock.call.state.WillRunStory(root_mock.story),
       mock.call.state.CanRunStory(root_mock.story),
@@ -1278,6 +1261,7 @@ class StoryRunnerTest(unittest.TestCase):
     options.reset_results = False
     options.use_live_sites = False
     options.max_failures = 100
+    options.pause = None
     options.pageset_repeat = 1
     options.output_formats = ['chartjson']
     options.run_disabled_tests = False
@@ -1309,6 +1293,78 @@ class StoryRunnerTest(unittest.TestCase):
       with open(os.path.join(temp_path, 'results-chart.json')) as f:
         data = json.load(f)
       self.assertFalse(data['enabled'])
+    finally:
+      shutil.rmtree(temp_path)
+
+  def testRunBenchmark_AddsOwnership_WithoutComponent(self):
+    @benchmark.Owner(emails=['alice@chromium.org'])
+    class FakeBenchmarkWithOwner(FakeBenchmark):
+      def __init__(self):
+        super(FakeBenchmark, self).__init__()
+        self._disabled = False
+        self._story_disabled = False
+
+    fake_benchmark = FakeBenchmarkWithOwner()
+    options = self._GenerateBaseBrowserFinderOptions()
+    options.output_formats = ['histograms']
+    temp_path = tempfile.mkdtemp()
+    try:
+      options.output_dir = temp_path
+      story_runner.RunBenchmark(fake_benchmark, options)
+
+      with open(os.path.join(temp_path, 'histograms.json')) as f:
+        data = json.load(f)
+
+      hs = histogram_set.HistogramSet()
+      hs.ImportDicts(data)
+
+      ownership_diagnostics = hs.GetSharedDiagnosticsOfType(
+        histogram_module.Ownership)
+
+      self.assertGreater(len(ownership_diagnostics), 0)
+
+      ownership_diagnostic = ownership_diagnostics[0]
+
+      self.assertIsInstance(ownership_diagnostic, histogram_module.Ownership)
+      self.assertIsNone(ownership_diagnostic.component)
+      self.assertItemsEqual(['alice@chromium.org'], ownership_diagnostic.emails)
+    finally:
+      shutil.rmtree(temp_path)
+
+  def testRunBenchmark_AddsOwnership_WithComponent(self):
+    @benchmark.Owner(emails=['alice@chromium.org', 'bob@chromium.org'],
+                     component='fooBar')
+    class FakeBenchmarkWithOwner(FakeBenchmark):
+      def __init__(self):
+        super(FakeBenchmark, self).__init__()
+        self._disabled = False
+        self._story_disabled = False
+
+    fake_benchmark = FakeBenchmarkWithOwner()
+    options = self._GenerateBaseBrowserFinderOptions()
+    options.output_formats = ['histograms']
+    temp_path = tempfile.mkdtemp()
+    try:
+      options.output_dir = temp_path
+      story_runner.RunBenchmark(fake_benchmark, options)
+
+      with open(os.path.join(temp_path, 'histograms.json')) as f:
+        data = json.load(f)
+
+      hs = histogram_set.HistogramSet()
+      hs.ImportDicts(data)
+
+      ownership_diagnostics = hs.GetSharedDiagnosticsOfType(
+        histogram_module.Ownership)
+
+      self.assertGreater(len(ownership_diagnostics), 0)
+
+      ownership_diagnostic = ownership_diagnostics[0]
+
+      self.assertIsInstance(ownership_diagnostic, histogram_module.Ownership)
+      self.assertEqual('fooBar', ownership_diagnostic.component)
+      self.assertItemsEqual(['alice@chromium.org', 'bob@chromium.org'],
+                            ownership_diagnostic.emails)
     finally:
       shutil.rmtree(temp_path)
 

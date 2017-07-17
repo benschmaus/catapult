@@ -77,8 +77,8 @@ class TestPage(unittest.TestCase):
         page.Page('http://www.bar.com/', story_set, story_set.base_dir,
                   name='http://www.bar.com/'))
 
-    self.assertEquals(story_set[0].display_name, 'http://www.foo.com/')
-    self.assertEquals(story_set[1].display_name, 'http://www.bar.com/')
+    self.assertEquals(story_set[0].name, 'http://www.foo.com/')
+    self.assertEquals(story_set[1].name, 'http://www.bar.com/')
 
   def testDisplayUrlForHttps(self):
     story_set = story.StorySet(base_dir=os.path.dirname(__file__))
@@ -89,8 +89,8 @@ class TestPage(unittest.TestCase):
         page.Page('https://www.bar.com/', story_set, story_set.base_dir,
                   name='https://www.bar.com/'))
 
-    self.assertEquals(story_set[0].display_name, 'http://www.foo.com/')
-    self.assertEquals(story_set[1].display_name, 'https://www.bar.com/')
+    self.assertEquals(story_set[0].name, 'http://www.foo.com/')
+    self.assertEquals(story_set[1].name, 'https://www.bar.com/')
 
   def testDisplayUrlForFile(self):
     story_set = story.StorySet(base_dir=os.path.dirname(__file__))
@@ -101,8 +101,8 @@ class TestPage(unittest.TestCase):
         'file://../../otherdir/bar.html', story_set, story_set.base_dir,
         name='bar.html'))
 
-    self.assertEquals(story_set[0].display_name, 'foo.html')
-    self.assertEquals(story_set[1].display_name, 'bar.html')
+    self.assertEquals(story_set[0].name, 'foo.html')
+    self.assertEquals(story_set[1].name, 'bar.html')
 
   def testDisplayUrlForFilesDifferingBySuffix(self):
     story_set = story.StorySet(base_dir=os.path.dirname(__file__))
@@ -113,8 +113,8 @@ class TestPage(unittest.TestCase):
         'file://../../otherdir/foo1.html', story_set, story_set.base_dir,
         name='foo1.html'))
 
-    self.assertEquals(story_set[0].display_name, 'foo.html')
-    self.assertEquals(story_set[1].display_name, 'foo1.html')
+    self.assertEquals(story_set[0].name, 'foo.html')
+    self.assertEquals(story_set[1].name, 'foo1.html')
 
   def testDisplayUrlForFileOfDifferentPaths(self):
     story_set = story.StorySet(base_dir=os.path.dirname(__file__))
@@ -126,8 +126,8 @@ class TestPage(unittest.TestCase):
         'file://../../otherdir/bar.html', story_set, story_set.base_dir,
         name='otherdir/bar.html'))
 
-    self.assertEquals(story_set[0].display_name, 'somedir/foo.html')
-    self.assertEquals(story_set[1].display_name, 'otherdir/bar.html')
+    self.assertEquals(story_set[0].name, 'somedir/foo.html')
+    self.assertEquals(story_set[1].name, 'otherdir/bar.html')
 
   def testDisplayUrlForFileDirectories(self):
     story_set = story.StorySet(base_dir=os.path.dirname(__file__))
@@ -138,8 +138,8 @@ class TestPage(unittest.TestCase):
         page.Page('file://../../otherdir/bar', story_set, story_set.base_dir,
                   name='bar'))
 
-    self.assertEquals(story_set[0].display_name, 'foo')
-    self.assertEquals(story_set[1].display_name, 'bar')
+    self.assertEquals(story_set[0].name, 'foo')
+    self.assertEquals(story_set[1].name, 'bar')
 
   def testDisplayUrlForSingleFile(self):
     story_set = story.StorySet(base_dir=os.path.dirname(__file__))
@@ -147,7 +147,7 @@ class TestPage(unittest.TestCase):
         'file://../../otherdir/foo.html', story_set, story_set.base_dir,
         name='foo.html'))
 
-    self.assertEquals(story_set[0].display_name, 'foo.html')
+    self.assertEquals(story_set[0].name, 'foo.html')
 
   def testDisplayUrlForSingleDirectory(self):
     story_set = story.StorySet(base_dir=os.path.dirname(__file__))
@@ -155,20 +155,12 @@ class TestPage(unittest.TestCase):
         page.Page('file://../../otherdir/foo', story_set, story_set.base_dir,
                   name='foo'))
 
-    self.assertEquals(story_set[0].display_name, 'foo')
+    self.assertEquals(story_set[0].name, 'foo')
 
   def testPagesHaveDifferentIds(self):
-    p0 = page.Page("http://example.com")
-    p1 = page.Page("http://example.com")
+    p0 = page.Page("http://example.com", name='example1')
+    p1 = page.Page("http://example.com", name='example2')
     self.assertNotEqual(p0.id, p1.id)
-
-  def testNamelessPageAsDict(self):
-    nameless_dict = page.Page('http://example.com/').AsDict()
-    self.assertIn('id', nameless_dict)
-    del nameless_dict['id']
-    self.assertEquals({
-                      'url': 'http://example.com/',
-                      }, nameless_dict)
 
   def testNamedPageAsDict(self):
     named_dict = page.Page('http://example.com/', name='Example').AsDict()
@@ -180,16 +172,16 @@ class TestPage(unittest.TestCase):
                       }, named_dict)
 
   def testIsLocal(self):
-    p = page.Page('file://foo.html')
+    p = page.Page('file://foo.html', name='foo.html')
     self.assertTrue(p.is_local)
 
-    p = page.Page('chrome://extensions')
+    p = page.Page('chrome://extensions', name='extensions')
     self.assertTrue(p.is_local)
 
-    p = page.Page('about:blank')
+    p = page.Page('about:blank', name='about:blank')
     self.assertTrue(p.is_local)
 
-    p = page.Page('http://foo.com')
+    p = page.Page('http://foo.com', name='http://foo.com')
     self.assertFalse(p.is_local)
 
 
@@ -197,7 +189,7 @@ class TestPageRun(unittest.TestCase):
 
   def testFiveGarbageCollectionCallsByDefault(self):
     mock_shared_state = mock.Mock()
-    p = page.Page('file://foo.html')
+    p = page.Page('file://foo.html', name='foo.html')
     p.Run(mock_shared_state)
     expected = [mock.call.current_tab.CollectGarbage(),
                 mock.call.current_tab.CollectGarbage(),
@@ -218,7 +210,7 @@ class TestPageRun(unittest.TestCase):
     class NonGarbageCollectPage(page.Page):
 
       def __init__(self, url):
-        super(NonGarbageCollectPage, self).__init__(url)
+        super(NonGarbageCollectPage, self).__init__(url, name=url)
         self._collect_garbage_before_run = False
 
     p = NonGarbageCollectPage('file://foo.html')

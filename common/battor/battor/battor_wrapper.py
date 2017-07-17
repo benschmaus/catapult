@@ -27,7 +27,20 @@ from serial.tools import list_ports
 DEFAULT_SHELL_CLOSE_TIMEOUT_S = 60
 
 
-def IsBattOrConnected(test_platform, android_device=None,
+def IsBattOrConnected(*args, **kwargs):
+  """Returns True if BattOr is detected.
+
+  See _IsBattOrConnected below for arguments.
+  """
+  is_connected = _IsBattOrConnected(*args, **kwargs)
+  if is_connected:
+    logging.info('BattOr power monitor is connected.')
+  else:
+    logging.info('BattOr power monitor is not connected.')
+  return is_connected
+
+
+def _IsBattOrConnected(test_platform, android_device=None,
                       android_device_map=None, android_device_file=None):
   """Returns True if BattOr is detected."""
   if test_platform == 'android':
@@ -38,11 +51,8 @@ def IsBattOrConnected(test_platform, android_device=None,
     if not android_device_map:
       device_tree = find_usb_devices.GetBusNumberToDeviceTreeMap()
       if device_tree:
-        logging.warning('Device tree:')
         for _, node in sorted(device_tree.iteritems()):
           node.Display()
-      else:
-        logging.warning('Empty device tree.')
       if len(battor_device_mapping.GetBattOrList(device_tree)) == 1:
         return True
       if android_device_file:
@@ -51,7 +61,6 @@ def IsBattOrConnected(test_platform, android_device=None,
       else:
         try:
           android_device_map = battor_device_mapping.GenerateSerialMap()
-          logging.warning('Android device map: %s', android_device_map)
         except battor_error.BattOrError:
           logging.exception('Error generating serial map')
           return False
@@ -296,7 +305,6 @@ class BattOrWrapper(object):
           return port
 
     if target_platform in ['android', 'linux']:
-      device_tree = find_usb_devices.GetBusNumberToDeviceTreeMap(fast=True)
       if battor_path:
         if not isinstance(battor_path, basestring):
           raise battor_error.BattOrError(
@@ -316,6 +324,7 @@ class BattOrWrapper(object):
             serial_map=battor_map)
 
       # Not Android and no explicitly passed BattOr.
+      device_tree = find_usb_devices.GetBusNumberToDeviceTreeMap(fast=True)
       battors = battor_device_mapping.GetBattOrList(device_tree)
       if len(battors) != 1:
         raise battor_error.BattOrError(

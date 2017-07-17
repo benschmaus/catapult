@@ -4,7 +4,7 @@
 
 package webpagereplay
 
-mport (
+import (
 	"bytes"
 	"fmt"
 	"io"
@@ -54,7 +54,6 @@ func (proxy *replayingProxy) ServeHTTP(w http.ResponseWriter, req *http.Request)
 	}
 	if req.URL.Path == "/web-page-replay-command-exit" {
 		log.Printf("Shutting down. Received /web-page-replay-command-exit")
-		RemoveRoot()
 		os.Exit(0)
 		return
 	}
@@ -62,7 +61,7 @@ func (proxy *replayingProxy) ServeHTTP(w http.ResponseWriter, req *http.Request)
 	logf := makeLogger(req)
 
 	// Lookup the response in the archive.
-	_, storedResp, _, err := proxy.a.FindRequest(req, proxy.scheme)
+	_, storedResp, err := proxy.a.FindRequest(req, proxy.scheme)
 	if err != nil {
 		logf("couldn't find matching request: %v", err)
 		w.WriteHeader(http.StatusNotFound)
@@ -142,12 +141,17 @@ func (proxy *recordingProxy) ServeHTTP(w http.ResponseWriter, req *http.Request)
 		if err := proxy.a.Close(); err != nil {
 			log.Printf("Error flushing archive: %v", err)
 		}
-		RemoveRoot()
 		os.Exit(0)
 		return
 	}
 	fixupRequestURL(req, proxy.scheme)
 	logf := makeLogger(req)
+	// https://github.com/golang/go/issues/16036. Server requests always
+	// have non-nil body even for GET and HEAD. This prevents http.Transport
+	// from retrying requests on dead reused conns. Catapult Issue 3706.
+	if req.ContentLength == 0 {
+		req.Body = nil
+	}
 	// Read the entire request body (for POST) before forwarding to the server
 	// so we can save the entire request in the archive.
 	var requestBody []byte

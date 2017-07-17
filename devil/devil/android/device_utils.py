@@ -17,6 +17,7 @@ import multiprocessing
 import os
 import posixpath
 import pprint
+import random
 import re
 import shutil
 import stat
@@ -175,6 +176,16 @@ _SPECIAL_ROOT_DEVICE_LIST = [
     'marlin',
     'sailfish',
 ]
+_IMEI_RE = re.compile(r'  Device ID = (.+)$')
+# The following regex is used to match result parcels like:
+"""
+Result: Parcel(
+  0x00000000: 00000000 0000000f 00350033 00360033 '........3.5.3.6.'
+  0x00000010: 00360032 00370030 00300032 00300039 '2.6.0.7.2.0.9.0.'
+  0x00000020: 00380033 00000039                   '3.8.9...        ')
+"""
+_PARCEL_RESULT_RE = re.compile(
+    r'0x[0-9a-f]{8}\: (?:[0-9a-f]{8}\s+){1,4}\'(.{16})\'')
 
 
 @decorators.WithExplicitTimeoutAndRetries(
@@ -507,6 +518,47 @@ class DeviceUtils(object):
     return self._cache['external_storage']
 
   @decorators.WithTimeoutAndRetriesFromInstance()
+  def GetIMEI(self, timeout=None, retries=None):
+    """Get the device's IMEI.
+
+    Args:
+      timeout: timeout in seconds
+      retries: number of retries
+
+    Returns:
+      The device's IMEI.
+
+    Raises:
+      AdbCommandFailedError on error
+    """
+    if self._cache.get('imei') is not None:
+      return self._cache.get('imei')
+
+    if self.build_version_sdk < 21:
+      out = self.RunShellCommand(['dumpsys', 'iphonesubinfo'],
+                                 raw_output=True, check_return=True)
+      if out:
+        match = re.search(_IMEI_RE, out)
+        if match:
+          self._cache['imei'] = match.group(1)
+          return self._cache['imei']
+    else:
+      out = self.RunShellCommand(['service', 'call', 'iphonesubinfo', '1'],
+                                 check_return=True)
+      if out:
+        imei = ''
+        for line in out:
+          match = re.search(_PARCEL_RESULT_RE, line)
+          if match:
+            imei = imei + match.group(1)
+        imei = imei.replace('.', '').strip()
+        if imei:
+          self._cache['imei'] = imei
+          return self._cache['imei']
+
+    raise device_errors.CommandFailedError('Unable to fetch IMEI.')
+
+  @decorators.WithTimeoutAndRetriesFromInstance()
   def GetApplicationPaths(self, package, timeout=None, retries=None):
     """Get the paths of the installed apks on the device for the given package.
 
@@ -539,13 +591,22 @@ class DeviceUtils(object):
     output = self.RunShellCommand(
         ['pm', 'path', package], check_return=should_check_return)
     apks = []
+    bad_output = False
     for line in output:
-      if not line.startswith('package:'):
+      if line.startswith('package:'):
+        apks.append(line[len('package:'):])
+      elif line.startswith('WARNING:'):
         continue
-      apks.append(line[len('package:'):])
+      else:
+        bad_output = True  # Unexpected line in output.
     if not apks and output:
-      raise device_errors.CommandFailedError(
-          'pm path returned: %r' % '\n'.join(output), str(self))
+      if bad_output:
+        raise device_errors.CommandFailedError(
+            'Unexpected pm path output: %r' % '\n'.join(output), str(self))
+      else:
+        logger.warning('pm returned no paths but the following warnings:')
+        for line in output:
+          logger.warning('- %s', line)
     self._cache['package_apk_paths'][package] = list(apks)
     return apks
 
@@ -1269,7 +1330,7 @@ class DeviceUtils(object):
 
     all_changed_files = []
     all_stale_files = []
-    missing_dirs = []
+    missing_dirs = set()
     cache_commit_funcs = []
     for h, d in host_device_tuples:
       assert os.path.isabs(h) and posixpath.isabs(d)
@@ -1281,16 +1342,17 @@ class DeviceUtils(object):
       cache_commit_funcs.append(cache_commit_func)
       if changed_files and not up_to_date_files and not stale_files:
         if os.path.isdir(h):
-          missing_dirs.append(d)
+          missing_dirs.add(d)
         else:
-          missing_dirs.append(posixpath.dirname(d))
+          missing_dirs.add(posixpath.dirname(d))
 
     if delete_device_stale and all_stale_files:
       self.RunShellCommand(['rm', '-f'] + all_stale_files, check_return=True)
 
     if all_changed_files:
       if missing_dirs:
-        self.RunShellCommand(['mkdir', '-p'] + missing_dirs, check_return=True)
+        self.RunShellCommand(['mkdir', '-p'] + list(missing_dirs),
+                             check_return=True)
       self._PushFilesImpl(host_device_tuples, all_changed_files)
     for func in cache_commit_funcs:
       func()
@@ -1561,7 +1623,7 @@ class DeviceUtils(object):
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def RemovePath(self, device_path, force=False, recursive=False,
-                 as_root=False, timeout=None, retries=None):
+                 as_root=False, rename=False, timeout=None, retries=None):
     """Removes the given path(s) from the device.
 
     Args:
@@ -1571,20 +1633,28 @@ class DeviceUtils(object):
       recursive: Whether to remove any directories in the path(s) recursively.
       as_root: Whether root permissions should be use to remove the given
                path(s).
+      rename: Whether to rename the path(s) before removing to help avoid
+            filesystem errors. See https://stackoverflow.com/questions/11539657
       timeout: timeout in seconds
       retries: number of retries
     """
+    def _RenamePath(path):
+      random_suffix = hex(random.randint(2 ** 12, 2 ** 16 - 1))[2:]
+      dest = '%s-%s' % (path, random_suffix)
+      self.RunShellCommand(
+          ['mv', path, dest], as_root=as_root, check_return=True)
+      return dest
     args = ['rm']
     if force:
       args.append('-f')
     if recursive:
       args.append('-r')
     if isinstance(device_path, basestring):
-      args.append(device_path)
+      args.append(device_path if not rename else _RenamePath(device_path))
     else:
-      args.extend(device_path)
+      args.extend(
+          device_path if not rename else [_RenamePath(p) for p in device_path])
     self.RunShellCommand(args, as_root=as_root, check_return=True)
-
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def PullFile(self, device_path, host_path, timeout=None, retries=None):

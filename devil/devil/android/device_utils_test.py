@@ -383,7 +383,7 @@ class DeviceUtilsGetApplicationPathsInternalTest(DeviceUtilsTest):
       self.assertEquals([],
           self.device._GetApplicationPathsInternal('not.installed.app'))
 
-  def testGetApplicationPathsInternal_garbageFirstLine(self):
+  def testGetApplicationPathsInternal_garbageOutputRaises(self):
     with self.assertCalls(
         (self.call.device.GetProp('ro.build.version.sdk', cache=True), '19'),
         (self.call.device.RunShellCommand(
@@ -391,6 +391,15 @@ class DeviceUtilsGetApplicationPathsInternalTest(DeviceUtilsTest):
          ['garbage first line'])):
       with self.assertRaises(device_errors.CommandFailedError):
         self.device._GetApplicationPathsInternal('android')
+
+  def testGetApplicationPathsInternal_outputWarningsIgnored(self):
+    with self.assertCalls(
+        (self.call.device.GetProp('ro.build.version.sdk', cache=True), '19'),
+        (self.call.device.RunShellCommand(
+            ['pm', 'path', 'not.installed.app'], check_return=True),
+         ['WARNING: some warning message from pm'])):
+      self.assertEquals([],
+          self.device._GetApplicationPathsInternal('not.installed.app'))
 
   def testGetApplicationPathsInternal_fails(self):
     with self.assertCalls(
@@ -2901,6 +2910,46 @@ class DeviecUtilsLoadCacheData(DeviceUtilsTest):
       data = json.loads(self.device.DumpCacheData())
       data['token'] = 'TOKEN'
       self.assertTrue(self.device.LoadCacheData(json.dumps(data)))
+
+
+class DeviceUtilsGetIMEITest(DeviceUtilsTest):
+
+  def testSuccessfulDumpsys(self):
+    dumpsys_output = (
+        'Phone Subscriber Info:'
+        '  Phone Type = GSM'
+        '  Device ID = 123454321')
+    with self.assertCalls(
+        (self.call.device.GetProp('ro.build.version.sdk', cache=True), '19'),
+        (self.call.adb.Shell('dumpsys iphonesubinfo'), dumpsys_output)):
+      self.assertEquals(self.device.GetIMEI(), '123454321')
+
+  def testSuccessfulServiceCall(self):
+    service_output = """
+        Result: Parcel(\n'
+          0x00000000: 00000000 0000000f 00350033 00360033 '........7.6.5.4.'
+          0x00000010: 00360032 00370030 00300032 00300039 '3.2.1.0.1.2.3.4.'
+          0x00000020: 00380033 00000039                   '5.6.7...        ')
+    """
+    with self.assertCalls(
+        (self.call.device.GetProp('ro.build.version.sdk', cache=True), '24'),
+        (self.call.adb.Shell('service call iphonesubinfo 1'), service_output)):
+      self.assertEquals(self.device.GetIMEI(), '765432101234567')
+
+  def testNoIMEI(self):
+    with self.assertCalls(
+        (self.call.device.GetProp('ro.build.version.sdk', cache=True), '19'),
+        (self.call.adb.Shell('dumpsys iphonesubinfo'), 'no device id')):
+      with self.assertRaises(device_errors.CommandFailedError):
+        self.device.GetIMEI()
+
+  def testAdbError(self):
+    with self.assertCalls(
+        (self.call.device.GetProp('ro.build.version.sdk', cache=True), '24'),
+        (self.call.adb.Shell('service call iphonesubinfo 1'),
+         self.ShellError())):
+      with self.assertRaises(device_errors.CommandFailedError):
+        self.device.GetIMEI()
 
 
 if __name__ == '__main__':

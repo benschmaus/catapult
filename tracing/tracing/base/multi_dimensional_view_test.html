@@ -71,7 +71,7 @@ tr.b.unittest.testSuite(function() {
       actualTreeNodesById, expectedStructureNodesById) {
     // Check the multi-dimensional title.
     assert.deepEqual(
-        tr.b.asArray(actualTreeNode.title), expectedStructureNode.title);
+        Array.from(actualTreeNode.title), expectedStructureNode.title);
 
     // Check the values.
     assert.deepEqual(actualTreeNode.values, expectedStructureNode.values);
@@ -373,10 +373,15 @@ tr.b.unittest.testSuite(function() {
                             generator.push('self: ', String(value.self), ',');
                             generator.breakLine();
                             generator.push('totalState: ');
-                            const totalStateName =
-                                tr.b.findFirstKeyInDictMatching(
-                                    MultiDimensionalViewNode.TotalState,
-                                    (n, s) => s === value.totalState);
+
+                            let totalStateName;
+                            for (const [name, state] of Object.entries(
+                                MultiDimensionalViewNode.TotalState)) {
+                              if (state === value.totalState) {
+                                totalStateName = name;
+                                break;
+                              }
+                            }
                             if (totalStateName === undefined) {
                               throw new Error(
                                   'Unknown total state: ' + value.totalState);
@@ -396,7 +401,7 @@ tr.b.unittest.testSuite(function() {
                     children,
                     function(singleDimensionChildren, dimension) {
                       generator.formatMultiLineList(
-                          tr.b.mapValues(singleDimensionChildren),
+                          Array.from(singleDimensionChildren.values()),
                           function(child, childIndex) {
                             withChild(child, dimension, function() {
                               formatExpectedTreeStructureRecursively(child);
